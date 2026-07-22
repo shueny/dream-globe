@@ -1,0 +1,34 @@
+/*
+ * Global styles + design tokens (README "Design Tokens").
+ * Round 1 only needs the page shell + globe stage; overlay-chrome classes
+ * (.glass, .card, keyframes) are added in Round 3.
+ */
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: #03060d;
+  overflow: hidden;
+  color: #cfefff;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Full-bleed stage with the globe vignette behind the canvas. */
+.globe-stage {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(125% 95% at 50% 40%, #0c1a34 0%, #060c18 56%, #03060d 100%);
+}
+
+/* Three.js canvas mount fills the stage. */
+.globe-mount {
+  position: absolute;
+  inset: 0;
+}

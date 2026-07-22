@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<style>
+  html,body{margin:0;height:100%;background:#03060d;overflow:hidden;font-family:"Space Grotesk",system-ui,sans-serif}
+  a{color:#6fd8ff}a:hover{color:#a7e9ff}
+  .glass{background:rgba(12,26,48,.55);border:1px solid rgba(120,200,255,.18);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+  .fld::placeholder{color:#5f7ea0}
+  .fld:focus{outline:none;border-color:rgba(120,200,255,.5)}
+  @keyframes floaty{0%,100%{transform:translateY(-50%)}50%{transform:translateY(calc(-50% - 5px))}}
+  @keyframes dot{0%,100%{opacity:.9}50%{opacity:.35}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</helmet>
+
+<div style="position:fixed;inset:0;width:100%;height:100%;background:radial-gradient(125% 95% at 50% 40%,#0c1a34 0%,#060c18 56%,#03060d 100%);color:#cfefff;user-select:none">
+  <!-- three.js mount -->
+  <div ref="{{ mountRef }}" style="position:absolute;inset:0;cursor:{{ globeCursor }}"></div>
+
+  <!-- loading -->
+  <sc-if value="{{ loading }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;z-index:40;background:radial-gradient(circle at 50% 45%,#0c1a34,#03060d)">
+      <div style="width:44px;height:44px;border-radius:50%;border:2px solid rgba(120,200,255,.2);border-top-color:#6fd8ff;animation:spin 1s linear infinite"></div>
+      <div style="font:400 13px 'IBM Plex Mono';color:#6f90b4;letter-spacing:1px">{{ loadingText }}</div>
+    </div>
+  </sc-if>
+
+  <!-- top bar -->
+  <div style="position:absolute;left:26px;top:22px;display:flex;align-items:center;gap:10px;z-index:20">
+    <div style="width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#6fd8ff,#3a7bff);box-shadow:0 0 14px rgba(90,180,255,.6)"></div>
+    <div style="font:600 15px 'Space Grotesk';letter-spacing:.3px;color:#eaf6ff">dreampin<span style="color:#6fd8ff">.</span></div>
+  </div>
+
+  <!-- fly-to search -->
+  <form onSubmit="{{ onSearch }}" style="position:absolute;left:50%;top:22px;transform:translateX(-50%);z-index:20;margin:0">
+    <div class="glass" style="display:flex;align-items:center;gap:9px;padding:9px 15px;width:320px;border-radius:11px">
+      <div style="width:13px;height:13px;border:1.5px solid #6fa8d8;border-radius:50%;flex:none"></div>
+      <input class="fld" value="{{ query }}" onInput="{{ onQuery }}" placeholder="Fly to a city, country, or dream…" style="flex:1;background:none;border:none;color:#eaf6ff;font:400 13px 'Space Grotesk'">
+    </div>
+    <sc-if value="{{ showResults }}" hint-placeholder-val="{{ false }}">
+      <div class="glass" style="margin-top:6px;border-radius:11px;overflow:hidden;animation:fadein .16s ease">
+        <sc-for list="{{ results }}" as="r" hint-placeholder-count="3">
+          <div onClick="{{ r.go }}" style="display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-bottom:1px solid rgba(120,200,255,.08)" style-hover="background:rgba(120,200,255,.1)">
+            <div style="width:6px;height:6px;border-radius:50%;background:#6fd8ff;box-shadow:0 0 6px #6fd8ff;flex:none"></div>
+            <div style="flex:1;min-width:0"><div style="font:600 13px 'Space Grotesk';color:#eaf6ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.title }}</div><div style="font:400 11px 'IBM Plex Mono';color:#6f90b4">{{ r.sub }}</div></div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+  </form>
+
+  <!-- counter -->
+  <div class="glass" style="position:absolute;right:26px;top:22px;display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:10px;z-index:20">
+    <div style="width:7px;height:7px;border-radius:50%;background:#6fe0a0;box-shadow:0 0 8px #6fe0a0;animation:dot 2s infinite"></div>
+    <span style="font:600 13px 'Space Grotesk';color:#eaf6ff">{{ countLabel }}</span><span style="font:400 12px 'IBM Plex Mono';color:#6f90b4">dreams live</span>
+  </div>
+
+  <!-- info card -->
+  <sc-if value="{{ active }}" hint-placeholder-val="{{ false }}">
+    <div class="glass" style="position:absolute;right:30px;top:50%;transform:translateY(-50%);width:270px;padding:18px;border-radius:16px;box-shadow:0 16px 44px rgba(0,0,0,.5);z-index:25;animation:floaty 7s ease-in-out infinite">
+      <div onClick="{{ closeCard }}" style="position:absolute;right:12px;top:12px;width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6f90b4;font:400 15px 'Space Grotesk'" style-hover="background:rgba(120,200,255,.12);color:#eaf6ff">×</div>
+      <div style="display:flex;align-items:center;gap:11px;margin-bottom:13px">
+        <div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#2a4a7a,#16273f);border:1px solid rgba(120,200,255,.25);display:flex;align-items:center;justify-content:center;font:600 15px 'Space Grotesk';color:#bfeaff">{{ d.initial }}</div>
+        <div><div style="font:600 14px 'Space Grotesk';color:#eaf6ff">{{ d.who }}</div><div style="font:400 11.5px 'IBM Plex Mono';color:#6f90b4">{{ d.place }}</div></div>
+      </div>
+      <div style="font:500 15px/1.42 'Space Grotesk';color:#dceeff;margin-bottom:14px">{{ d.quote }}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(111,216,255,.14);border:1px solid rgba(111,216,255,.3)"><div style="width:6px;height:6px;border-radius:50%;background:#6fd8ff"></div><span style="font:600 11px 'IBM Plex Mono';color:#9fdfff">{{ d.tier }}</span></div>
+        <span style="font:400 11px 'IBM Plex Mono';color:#5f7ea0">{{ d.ago }}</span>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- zoom control -->
+  <div class="glass" style="position:absolute;right:30px;bottom:28px;display:flex;flex-direction:column;border-radius:11px;overflow:hidden;z-index:20">
+    <div onClick="{{ zoomIn }}" style="width:38px;height:38px;display:flex;align-items:center;justify-content:center;font:400 20px 'Space Grotesk';color:#cfe8ff;border-bottom:1px solid rgba(120,200,255,.14);cursor:pointer" style-hover="background:rgba(120,200,255,.12)">+</div>
+    <div onClick="{{ zoomOut }}" style="width:38px;height:38px;display:flex;align-items:center;justify-content:center;font:400 20px 'Space Grotesk';color:#cfe8ff;cursor:pointer" style-hover="background:rgba(120,200,255,.12)">−</div>
+  </div>
+
+  <!-- drag hint / pin button -->
+  <div style="position:absolute;left:30px;bottom:28px;display:flex;align-items:center;gap:14px;z-index:20">
+    <button onClick="{{ startPin }}" style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:none;border-radius:999px;background:linear-gradient(135deg,#6fd8ff,#3a7bff);color:#04101f;font:600 13px 'Space Grotesk';cursor:pointer;box-shadow:0 8px 22px rgba(90,180,255,.35)"><span style="font-size:15px;line-height:1">✦</span>Pin your dream</button>
+    <div style="display:flex;align-items:center;gap:8px;font:400 12px 'IBM Plex Mono';color:#5f7ea0"><span style="padding:3px 7px;border:1px solid rgba(120,200,255,.2);border-radius:6px">drag</span>rotate<span style="padding:3px 7px;border:1px solid rgba(120,200,255,.2);border-radius:6px;margin-left:4px">scroll</span>zoom</div>
+  </div>
+
+  <!-- placing banner -->
+  <sc-if value="{{ placing }}" hint-placeholder-val="{{ false }}">
+    <div class="glass" style="position:absolute;left:50%;bottom:30px;transform:translateX(-50%);display:flex;align-items:center;gap:12px;padding:11px 18px;border-radius:999px;z-index:30;animation:fadein .2s ease">
+      <div style="width:8px;height:8px;border-radius:50%;background:#6fe0a0;box-shadow:0 0 8px #6fe0a0;animation:dot 1.4s infinite"></div>
+      <span style="font:500 13px 'Space Grotesk';color:#eaf6ff">Click anywhere on the globe to drop your dream</span>
+      <span onClick="{{ cancelPin }}" style="font:400 12px 'IBM Plex Mono';color:#6f90b4;cursor:pointer;padding-left:4px" style-hover="color:#eaf6ff">cancel</span>
+    </div>
+  </sc-if>
+
+  <!-- tooltip -->
+  <sc-if value="{{ tip }}" hint-placeholder-val="{{ false }}">
+    <div class="glass" style="{{ tipStyle }}">
+      <div style="font:600 12px 'Space Grotesk';color:#eaf6ff">{{ tip.who }}</div>
+      <div style="font:400 10.5px 'IBM Plex Mono';color:#6f90b4">{{ tip.place }}</div>
+    </div>
+  </sc-if>
+
+  <!-- add-dream modal -->
+  <sc-if value="{{ adding }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(3,6,13,.6);backdrop-filter:blur(3px);animation:fadein .18s ease">
+      <div class="glass" style="width:360px;padding:24px;border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.6)">
+        <div style="font:600 17px 'Space Grotesk';color:#eaf6ff;margin-bottom:4px">Pin a new dream</div>
+        <div style="font:400 12px 'IBM Plex Mono';color:#6f90b4;margin-bottom:18px">{{ pendingCoords }}</div>
+        <input class="fld" value="{{ form.name }}" onInput="{{ onFormName }}" placeholder="Your name" style="width:100%;box-sizing:border-box;background:rgba(6,14,26,.6);border:1px solid rgba(120,200,255,.2);border-radius:10px;padding:11px 13px;color:#eaf6ff;font:400 13px 'Space Grotesk';margin-bottom:10px">
+        <textarea class="fld" value="{{ form.text }}" onInput="{{ onFormText }}" placeholder="What do you dream of?" rows="3" style="width:100%;box-sizing:border-box;background:rgba(6,14,26,.6);border:1px solid rgba(120,200,255,.2);border-radius:10px;padding:11px 13px;color:#eaf6ff;font:400 13px/1.4 'Space Grotesk';resize:none;margin-bottom:16px"></textarea>
+        <div style="display:flex;gap:10px">
+          <button onClick="{{ cancelAdd }}" style="flex:1;padding:11px;border:1px solid rgba(120,200,255,.2);border-radius:10px;background:none;color:#cfe8ff;font:600 13px 'Space Grotesk';cursor:pointer">Cancel</button>
+          <button onClick="{{ submitPin }}" style="flex:1;padding:11px;border:none;border-radius:10px;background:linear-gradient(135deg,#6fd8ff,#3a7bff);color:#04101f;font:600 13px 'Space Grotesk';cursor:pointer">Drop dream ✦</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(props){
+    super(props);
+    this.mount = React.createRef();
+    this.state = {
+      loading:true, loadingText:'loading globe…', active:false, d:{}, query:'',
+      results:[], showResults:false, placing:false, adding:false, tip:null,
+      form:{name:'',text:''}, added:0, cursor:'grab'
+    };
+    this.dreams = [
+      {lat:-1.286,lng:36.817,name:'Aïsha',age:24,city:'Nairobi',country:'Kenya',text:'Build a rooftop observatory so kids in Kibera can name their own stars.',tier:'STARDUST',ago:'2d ago'},
+      {lat:40.713,lng:-74.006,name:'Marcus',age:31,city:'New York',country:'USA',text:'Open a 24-hour bookstore where anyone can sleep among the shelves.',tier:'DRIFTER',ago:'5h ago'},
+      {lat:35.689,lng:139.692,name:'Yuki',age:19,city:'Tokyo',country:'Japan',text:'Design a train that only stops in towns nobody visits anymore.',tier:'STARDUST',ago:'1d ago'},
+      {lat:48.857,lng:2.352,name:'Camille',age:27,city:'Paris',country:'France',text:'Teach my grandmother to paint the sea before her eyes go.',tier:'DRIFTER',ago:'3d ago'},
+      {lat:-33.869,lng:151.209,name:'Noah',age:22,city:'Sydney',country:'Australia',text:'Swim every coastline of this continent, one summer at a time.',tier:'VOYAGER',ago:'8h ago'},
+      {lat:-23.551,lng:-46.633,name:'Lucía',age:29,city:'São Paulo',country:'Brazil',text:'Turn the empty lot behind my street into a forest.',tier:'STARDUST',ago:'6d ago'},
+      {lat:55.755,lng:37.617,name:'Dmitri',age:34,city:'Moscow',country:'Russia',text:'Record the sound of every river before winter locks them.',tier:'DRIFTER',ago:'12h ago'},
+      {lat:28.613,lng:77.209,name:'Priya',age:26,city:'New Delhi',country:'India',text:'Cook one free meal a day for a stranger until I am old.',tier:'VOYAGER',ago:'4d ago'},
+      {lat:37.774,lng:-122.419,name:'Theo',age:23,city:'San Francisco',country:'USA',text:'Ship a tiny app that makes one lonely person feel seen.',tier:'STARDUST',ago:'1h ago'},
+      {lat:30.044,lng:31.236,name:'Salma',age:28,city:'Cairo',country:'Egypt',text:'Read every letter my great-grandfather never sent.',tier:'DRIFTER',ago:'9d ago'},
+      {lat:51.507,lng:-0.128,name:'Oliver',age:33,city:'London',country:'UK',text:'Score a film for a director who does not exist yet.',tier:'VOYAGER',ago:'2d ago'},
+      {lat:-34.604,lng:-58.382,name:'Mateo',age:21,city:'Buenos Aires',country:'Argentina',text:'Dance the last tango in a bar that is about to close forever.',tier:'STARDUST',ago:'7h ago'}
+    ];
+    this.cities = [
+      {name:'Berlin',country:'Germany',lat:52.52,lng:13.405},{name:'Rome',country:'Italy',lat:41.902,lng:12.496},{name:'Madrid',country:'Spain',lat:40.416,lng:-3.703},{name:'Barcelona',country:'Spain',lat:41.385,lng:2.173},{name:'Amsterdam',country:'Netherlands',lat:52.367,lng:4.904},{name:'Berlin',country:'Germany',lat:52.52,lng:13.405},{name:'Istanbul',country:'Turkey',lat:41.008,lng:28.978},{name:'Athens',country:'Greece',lat:37.983,lng:23.727},{name:'Lisbon',country:'Portugal',lat:38.722,lng:-9.139},{name:'Vienna',country:'Austria',lat:48.208,lng:16.373},{name:'Stockholm',country:'Sweden',lat:59.329,lng:18.068},{name:'Berlin',country:'Germany',lat:52.52,lng:13.405},{name:'Dublin',country:'Ireland',lat:53.349,lng:-6.26},{name:'Toronto',country:'Canada',lat:43.653,lng:-79.383},{name:'Los Angeles',country:'USA',lat:34.052,lng:-118.244},{name:'Chicago',country:'USA',lat:41.878,lng:-87.63},{name:'Mexico City',country:'Mexico',lat:19.433,lng:-99.133},{name:'Bogotá',country:'Colombia',lat:4.711,lng:-74.072},{name:'Lima',country:'Peru',lat:-12.046,lng:-77.043},{name:'Rio de Janeiro',country:'Brazil',lat:-22.907,lng:-43.173},{name:'Santiago',country:'Chile',lat:-33.449,lng:-70.669},{name:'Lagos',country:'Nigeria',lat:6.524,lng:3.379},{name:'Cape Town',country:'South Africa',lat:-33.925,lng:18.424},{name:'Johannesburg',country:'South Africa',lat:-26.204,lng:28.047},{name:'Nairobi',country:'Kenya',lat:-1.286,lng:36.817},{name:'Casablanca',country:'Morocco',lat:33.573,lng:-7.59},{name:'Dubai',country:'UAE',lat:25.205,lng:55.271},{name:'Tehran',country:'Iran',lat:35.689,lng:51.389},{name:'Mumbai',country:'India',lat:19.076,lng:72.878},{name:'Bangkok',country:'Thailand',lat:13.756,lng:100.502},{name:'Singapore',country:'Singapore',lat:1.352,lng:103.82},{name:'Jakarta',country:'Indonesia',lat:-6.208,lng:106.846},{name:'Hong Kong',country:'China',lat:22.319,lng:114.17},{name:'Shanghai',country:'China',lat:31.23,lng:121.474},{name:'Beijing',country:'China',lat:39.904,lng:116.407},{name:'Seoul',country:'South Korea',lat:37.567,lng:126.978},{name:'Osaka',country:'Japan',lat:34.694,lng:135.502},{name:'Manila',country:'Philippines',lat:14.6,lng:120.984},{name:'Melbourne',country:'Australia',lat:-37.814,lng:144.963},{name:'Auckland',country:'New Zealand',lat:-36.848,lng:174.763},{name:'Reykjavik',country:'Iceland',lat:64.147,lng:-21.94}
+    ];
+    this.markers = [];
+    this.arcs = [];
+    this.fly = null;
+    this.hovered = null;
+    this.idleTimer = null;
+  }
+
+  componentDidMount(){
+    let tries=0;
+    const wait=()=>{
+      if(window.THREE && THREE.OrbitControls){ this.init(); return; }
+      if(tries++>200){ this.setState({loadingText:'could not load 3D engine'}); return; }
+      setTimeout(wait,50);
+    };
+    wait();
+  }
+  componentWillUnmount(){ this._stop=true; window.removeEventListener('resize',this._onResize); if(this.renderer){this.renderer.dispose&&this.renderer.dispose();} }
+
+  ll2v(lat,lng,r){
+    const phi=(90-lat)*Math.PI/180, theta=(lng+180)*Math.PI/180;
+    return new THREE.Vector3(-r*Math.sin(phi)*Math.cos(theta), r*Math.cos(phi), r*Math.sin(phi)*Math.sin(theta));
+  }
+  v2ll(v){
+    const n=v.clone().normalize();
+    const lat=90-Math.acos(n.y)*180/Math.PI;
+    let lng=(Math.atan2(n.z,-n.x)*180/Math.PI)-180;
+    while(lng<-180)lng+=360; while(lng>180)lng-=360;
+    return {lat,lng};
+  }
+  glowTexture(){
+    const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d');
+    const grd=g.createRadialGradient(32,32,0,32,32,32);
+    grd.addColorStop(0,'rgba(255,255,255,1)');grd.addColorStop(.28,'rgba(255,255,255,.9)');
+    grd.addColorStop(.6,'rgba(255,255,255,.28)');grd.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle=grd;g.fillRect(0,0,64,64);
+    return new THREE.CanvasTexture(c);
+  }
+
+  init(){
+    const R=1, mount=this.mount.current;
+    const W=mount.clientWidth||window.innerWidth, H=mount.clientHeight||window.innerHeight;
+    const scene=new THREE.Scene(); this.scene=scene;
+    const camera=new THREE.PerspectiveCamera(45,W/H,0.1,100); this.camera=camera;
+    camera.position.copy(this.ll2v(22,-18,1).normalize().multiplyScalar(2.55));
+    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true}); this.renderer=renderer;
+    renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(W,H);
+    mount.appendChild(renderer.domElement);
+
+    const controls=new THREE.OrbitControls(camera,renderer.domElement); this.controls=controls;
+    controls.enableDamping=true; controls.dampingFactor=.08; controls.rotateSpeed=.5;
+    controls.enablePan=false; controls.minDistance=1.5; controls.maxDistance=5;
+    controls.autoRotate=true; controls.autoRotateSpeed=.35;
+    controls.addEventListener('start',()=>{ controls.autoRotate=false; clearTimeout(this.idleTimer); });
+    controls.addEventListener('end',()=>{ clearTimeout(this.idleTimer); this.idleTimer=setTimeout(()=>{controls.autoRotate=true;},4000); });
+
+    const globe=new THREE.Group(); scene.add(globe); this.globe=globe;
+
+    // earth sphere
+    const geo=new THREE.SphereGeometry(R,64,64);
+    const mat=new THREE.MeshStandardMaterial({color:0x0a1d3a,emissive:0x0a1830,emissiveIntensity:1,roughness:1,metalness:0});
+    const earth=new THREE.Mesh(geo,mat); globe.add(earth);
+    const loader=new THREE.TextureLoader(); loader.setCrossOrigin('anonymous');
+    const hosts=['https://unpkg.com/','https://cdn.jsdelivr.net/npm/'];
+    const loadTex=(file,cb)=>{ let i=0; const t=()=>{ if(i>=hosts.length)return; loader.load(hosts[i]+'three-globe/example/img/'+file, cb, undefined, ()=>{i++;t();}); }; t(); };
+    // base map: blue-marble, dark-tinted so continents read clearly over ocean
+    loadTex('earth-blue-marble.jpg',(tex)=>{ tex.encoding=THREE.sRGBEncoding; mat.map=tex; mat.color=new THREE.Color(0x8aa6cc); mat.needsUpdate=true; });
+    // glow layer: night city lights
+    loadTex('earth-night.jpg',(tex)=>{ tex.encoding=THREE.sRGBEncoding; mat.emissiveMap=tex; mat.emissive=new THREE.Color(0xffd49a); mat.emissiveIntensity=1.05; mat.needsUpdate=true; });
+
+    // graticule
+    const grid=new THREE.LineBasicMaterial({color:0x2a5a8a,transparent:true,opacity:.25});
+    const wire=new THREE.Mesh(new THREE.SphereGeometry(R*1.001,24,16));
+    const wireLines=new THREE.LineSegments(new THREE.WireframeGeometry(wire.geometry),grid); globe.add(wireLines);
+
+    // atmosphere
+    const atmMat=new THREE.ShaderMaterial({
+      transparent:true, side:THREE.BackSide, blending:THREE.AdditiveBlending, depthWrite:false,
+      uniforms:{glow:{value:new THREE.Color(0x4aa8ff)}},
+      vertexShader:'varying vec3 vN;void main(){vN=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+      fragmentShader:'uniform vec3 glow;varying vec3 vN;void main(){float i=pow(max(0.0,0.62-dot(vN,vec3(0.,0.,1.))),3.5);gl_FragColor=vec4(glow,1.0)*i*1.1;}'
+    });
+    const atm=new THREE.Mesh(new THREE.SphereGeometry(R,64,64),atmMat); atm.scale.set(1.16,1.16,1.16); scene.add(atm);
+
+    // lights — dim so night-side city lights dominate
+    scene.add(new THREE.AmbientLight(0x54657f,0.5));
+    const dir=new THREE.DirectionalLight(0xdce8ff,1.25); dir.position.set(-1.6,1.0,2.4); scene.add(dir);
+
+    // markers
+    this.glowTex=this.glowTexture();
+    this.markerGroup=new THREE.Group(); globe.add(this.markerGroup);
+    this.dreams.forEach((dr)=>this._addMarkerObj(dr));
+
+    // arcs between select pairs
+    const pairs=[[0,7],[0,3],[1,8],[2,4],[5,1],[3,10],[7,4],[6,2],[9,10]];
+    this.arcGroup=new THREE.Group(); globe.add(this.arcGroup);
+    pairs.forEach(([a,b])=>this._addArc(this.dreams[a],this.dreams[b]));
+
+    // interaction
+    this.ray=new THREE.Raycaster(); this.mouse=new THREE.Vector2();
+    const dom=renderer.domElement;
+    dom.addEventListener('pointermove',this._onMove=(e)=>this.onPointerMove(e));
+    dom.addEventListener('pointerdown',this._downXY=(e)=>{this._dx=e.clientX;this._dy=e.clientY;});
+    dom.addEventListener('pointerup',this._onUp=(e)=>this.onPointerUp(e));
+
+    this._onResize=()=>{const w=mount.clientWidth,h=mount.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);};
+    window.addEventListener('resize',this._onResize);
+
+    // public API
+    window.DreamGlobe={
+      addMarker:(lat,lng,data)=>this.addMarker(lat,lng,data),
+      flyTo:(lat,lng)=>this.flyTo(lat,lng),
+      onMarkerClick:(cb)=>{this._onMarkerClick=cb;}
+    };
+
+    window.__DG=this;
+    this.clock=new THREE.Clock();
+    this.animate();
+    setTimeout(()=>this.setState({loading:false}),350);
+  }
+
+  _addMarkerObj(dr){
+    const pos=this.ll2v(dr.lat,dr.lng,1.015);
+    const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:this.glowTex,color:0xffbe42,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));
+    spr.position.copy(pos); spr.scale.set(0.12,0.12,0.12);
+    spr.userData={dream:dr,base:0.12,phase:Math.random()*6.28};
+    this.markerGroup.add(spr); this.markers.push(spr);
+    return spr;
+  }
+  _addArc(a,b){
+    const va=this.ll2v(a.lat,a.lng,1.01), vb=this.ll2v(b.lat,b.lng,1.01);
+    const mid=va.clone().add(vb).multiplyScalar(0.5);
+    const lift=1+va.distanceTo(vb)*0.35; mid.normalize().multiplyScalar(lift);
+    const curve=new THREE.QuadraticBezierCurve3(va,mid,vb);
+    const geo=new THREE.TubeGeometry(curve,40,0.004,6,false);
+    const mat=new THREE.MeshBasicMaterial({color:0x6fd8ff,transparent:true,opacity:0.4,blending:THREE.AdditiveBlending});
+    const tube=new THREE.Mesh(geo,mat); this.arcGroup.add(tube);
+    const trav=new THREE.Sprite(new THREE.SpriteMaterial({map:this.glowTex,color:0xdff6ff,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));
+    trav.scale.set(0.05,0.05,0.05); this.arcGroup.add(trav);
+    this.arcs.push({curve,trav,t:Math.random(),speed:0.12+Math.random()*0.1});
+  }
+
+  setCursor(c){ if(this.state.cursor!==c) this.setState({cursor:c}); }
+
+  onPointerMove(e){
+    if(!this.camera) return;
+    const rect=this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
+    this.mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+    this.ray.setFromCamera(this.mouse,this.camera);
+    const hits=this.ray.intersectObjects(this.markers,false).filter(h=>this._facing(h.object));
+    if(hits.length){
+      const dr=hits[0].object.userData.dream; this.hovered=hits[0].object;
+      this.setCursor('pointer');
+      this.setState({tip:{who:dr.name+', '+dr.age, place:dr.city+' · '+dr.country},
+        tipStyle:`position:absolute;left:${e.clientX+14}px;top:${e.clientY+14}px;padding:8px 11px;border-radius:9px;z-index:35;pointer-events:none`});
+    } else {
+      this.hovered=null;
+      if(this.state.tip) this.setState({tip:null});
+      this.setCursor(this.state.placing?'crosshair':'grab');
+    }
+  }
+  _facing(obj){
+    const wp=new THREE.Vector3(); obj.getWorldPosition(wp);
+    const cam=this.camera.position.clone().normalize();
+    return wp.clone().normalize().dot(cam)>0.12;
+  }
+  onPointerUp(e){
+    const moved=Math.abs(e.clientX-this._dx)+Math.abs(e.clientY-this._dy);
+    if(moved>5) return; // was a drag
+    if(this.state.placing){
+      const rect=this.renderer.domElement.getBoundingClientRect();
+      this.mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
+      this.mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+      this.ray.setFromCamera(this.mouse,this.camera);
+      const hit=this.ray.intersectObject(this.globe.children[0],false);
+      if(hit.length){
+        const local=this.globe.worldToLocal(hit[0].point.clone());
+        const ll=this.v2ll(local);
+        this._pending=ll;
+        this.setState({placing:false, adding:true, cursor:'grab',
+          pendingCoords:`LAT ${ll.lat.toFixed(3)} · LNG ${ll.lng.toFixed(3)}`});
+      }
+      return;
+    }
+    if(this.hovered){
+      const dr=this.hovered.userData.dream;
+      this.openCard(dr);
+      this.flyTo(dr.lat,dr.lng);
+      if(this._onMarkerClick) this._onMarkerClick(dr);
+    }
+  }
+
+  openCard(dr){
+    this.setState({active:true, tip:null, d:{
+      initial:dr.name[0], who:dr.name+', '+dr.age, place:dr.city+' · '+dr.country,
+      quote:'“'+dr.text+'”', tier:dr.tier, ago:dr.ago }});
+  }
+  closeCard(){ this.setState({active:false}); }
+
+  flyTo(lat,lng){
+    if(!this.camera) return;
+    this.controls.autoRotate=false; this.controls.enabled=false; clearTimeout(this.idleTimer);
+    const target=this.ll2v(lat,lng,1).normalize();
+    const fromDir=this.camera.position.clone().normalize();
+    const fromR=this.camera.position.length();
+    this.fly={fromDir,toDir:target,fromR,toR:2.1,t:0,dur:1.1};
+  }
+
+  addMarker(lat,lng,data){
+    const dr=Object.assign({lat,lng,name:'Dreamer',age:'',city:'',country:'',text:'A new dream.',tier:'DRIFTER',ago:'just now'},data||{});
+    this.dreams.push(dr); this._addMarkerObj(dr);
+    this.setState({added:this.state.added+1});
+    return dr;
+  }
+
+  animate(){
+    if(this._stop) return;
+    requestAnimationFrame(()=>this.animate());
+    const t=this.clock.getElapsedTime();
+    // marker pulse
+    this.markers.forEach(m=>{ const s=m.userData.base*(1+0.28*Math.sin(t*2.4+m.userData.phase)); m.scale.set(s,s,s);
+      const face=this._facing(m); m.material.opacity=face?1:0.12; });
+    // arc travellers
+    this.arcs.forEach(a=>{ a.t=(a.t+a.speed*0.016)%1; const p=a.curve.getPoint(a.t); a.trav.position.copy(p); });
+    // fly tween
+    if(this.fly){
+      this.fly.t+=0.016/this.fly.dur;
+      const k=Math.min(1,this.fly.t), e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+      const dir=this.fly.fromDir.clone().lerp(this.fly.toDir,e).normalize();
+      const r=this.fly.fromR+(this.fly.toR-this.fly.fromR)*e;
+      this.camera.position.copy(dir.multiplyScalar(r));
+      this.camera.up.set(0,1,0);
+      this.camera.lookAt(0,0,0);
+      if(k>=1){ this.fly=null; this.controls.enabled=true; this.idleTimer=setTimeout(()=>{this.controls.autoRotate=true;},4000); }
+      this.renderer.render(this.scene,this.camera);
+    } else {
+      this.controls.update();
+      this.renderer.render(this.scene,this.camera);
+    }
+  }
+
+  // ---- overlay handlers ----
+  onQuery(e){
+    const q=e.target.value; const ql=q.toLowerCase().trim();
+    const dm = ql ? this.dreams.filter(d=>(d.city+' '+d.country+' '+d.name).toLowerCase().includes(ql))
+      .map(d=>({title:d.city+', '+d.country, sub:'✦ '+d.name+' · '+d.tier, go:()=>this.gotoDream(d)})) : [];
+    const seen=new Set(dm.map(r=>r.title.toLowerCase()));
+    const cm = ql ? this.cities.filter(c=>{
+        const key=(c.name+', '+c.country).toLowerCase(); if(seen.has(key)) return false; seen.add(key);
+        return (c.name+' '+c.country).toLowerCase().includes(ql);
+      }).map(c=>({title:c.name+', '+c.country, sub:'Fly here', go:()=>this.gotoPlace(c)})) : [];
+    const results=[...dm,...cm].slice(0,6);
+    this.setState({query:q, results, showResults:results.length>0, searching:ql.length>=2});
+    clearTimeout(this._geoTimer);
+    if(ql.length>=2) this._geoTimer=setTimeout(()=>this.geocode(ql,dm),260);
+  }
+  geocode(ql,dm){
+    fetch('https://geocoding-api.open-meteo.com/v1/search?name='+encodeURIComponent(ql)+'&count=8&language=en&format=json')
+      .then(r=>r.json()).then(j=>{
+        if((this.state.query||'').toLowerCase().trim()!==ql) return; // stale
+        const seen=new Set(dm.map(r=>r.title.toLowerCase()));
+        const places=(j.results||[]).map(p=>{
+          const title=p.name+(p.country?', '+p.country:'');
+          return {title, key:title.toLowerCase(),
+            sub:(p.admin1&&p.admin1!==p.name?p.admin1+' · ':'')+'Fly here',
+            go:()=>this.gotoPlace({name:p.name,lat:p.latitude,lng:p.longitude})};
+        }).filter(p=>{ if(seen.has(p.key))return false; seen.add(p.key); return true; });
+        const results=[...dm,...places].slice(0,7);
+        this.setState({results, showResults:results.length>0, searching:false});
+      }).catch(()=>this.setState({searching:false}));
+  }
+  gotoDream(d){ this.setState({query:d.city, showResults:false}); this.openCard(d); this.flyTo(d.lat,d.lng); }
+  gotoPlace(c){ this.setState({query:c.name, showResults:false, active:false}); this.flyTo(c.lat,c.lng); }
+  onSearch(e){ e.preventDefault(); if(this.state.results[0]) this.state.results[0].go(); }
+
+  zoomIn(){ this._dolly(0.75); }
+  zoomOut(){ this._dolly(1.33); }
+  _dolly(f){ if(!this.camera)return; const len=Math.max(this.controls.minDistance,Math.min(this.controls.maxDistance,this.camera.position.length()*f)); this.camera.position.setLength(len); this.controls.update(); }
+
+  startPin(){ this.setState({placing:true, active:false, cursor:'crosshair', showResults:false}); }
+  cancelPin(){ this.setState({placing:false, cursor:'grab'}); }
+  cancelAdd(){ this.setState({adding:false}); }
+  onFormName(e){ this.setState({form:{...this.state.form,name:e.target.value}}); }
+  onFormText(e){ this.setState({form:{...this.state.form,text:e.target.value}}); }
+  submitPin(){
+    const {name,text}=this.state.form; const ll=this._pending;
+    const dr=this.addMarker(ll.lat,ll.lng,{name:name||'You',age:'',city:'Your pin',country:`${ll.lat.toFixed(1)}, ${ll.lng.toFixed(1)}`,text:text||'A brand-new dream, just added.',tier:'DRIFTER',ago:'just now'});
+    this.setState({adding:false, form:{name:'',text:''}});
+    this.openCard(dr); this.flyTo(ll.lat,ll.lng);
+  }
+
+  renderVals(){
+    const s=this.state;
+    return {
+      mountRef:this.mount, loading:s.loading, loadingText:s.loadingText,
+      globeCursor:s.cursor, active:s.active, d:s.d, query:s.query,
+      results:s.results, showResults:s.showResults, placing:s.placing,
+      adding:s.adding, tip:s.tip, tipStyle:s.tipStyle, form:s.form,
+      pendingCoords:s.pendingCoords||'',
+      countLabel:(48213+s.added).toLocaleString(),
+      onQuery:(e)=>this.onQuery(e), onSearch:(e)=>this.onSearch(e),
+      closeCard:()=>this.closeCard(), zoomIn:()=>this.zoomIn(), zoomOut:()=>this.zoomOut(),
+      startPin:()=>this.startPin(), cancelPin:()=>this.cancelPin(),
+      cancelAdd:()=>this.cancelAdd(), submitPin:()=>this.submitPin(),
+      onFormName:(e)=>this.onFormName(e), onFormText:(e)=>this.onFormText(e)
+    };
+  }
+}
+</script>
+</body>
+</html>
