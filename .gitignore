@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+scripts/.cache
+coverage
+test-results
+playwright-report
