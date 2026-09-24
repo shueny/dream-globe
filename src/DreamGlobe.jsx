@@ -293,8 +293,12 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
     setTip(null);
   };
 
+  // Guards against a double submit (Enter key repeat, double click) landing
+  // before React re-renders and clears `pending`.
+  const submittedFor = useRef(null);
   const submitPin = () => {
-    if (!pending) return;
+    if (!pending || submittedFor.current === pending) return;
+    submittedFor.current = pending;
     const { lat, lng, country, state } = pending;
     const near = geo && country ? nearestPlace(geo, country, lat, lng) : null;
     const dr = ctxRef.current.addMarker(lat, lng, {
@@ -479,6 +483,10 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
         <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && setPending(null)}>
           <form
             className="glass modal"
+            onKeyDown={(e) => {
+              // The global Esc handler ignores focused inputs, so close here.
+              if (e.key === "Escape") setPending(null);
+            }}
             onSubmit={(e) => {
               e.preventDefault();
               submitPin();
