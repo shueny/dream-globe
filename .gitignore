@@ -26,3 +26,6 @@ scripts/.cache
 coverage
 test-results
 playwright-report
+
+# Local editor/agent run configs
+.claude/launch.json

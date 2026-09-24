@@ -211,7 +211,8 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
 
   // ── Scene → React handlers (refreshed every render) ───────────────────────
   handlers.current = {
-    hover: setTip,
+    // No hover tooltips while the pin modal is open.
+    hover: (t) => setTip(pending ? null : t),
     dream: (d) => setCard(d),
     background: () => {
       setCard(null);

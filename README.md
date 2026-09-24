@@ -38,6 +38,10 @@ pnpm test:unit  # Vitest (geo math, search, 3D layer builders) — add --coverag
 pnpm test:e2e   # Playwright against the production build
 ```
 
+Every push to `main` is deployed to GitHub Pages by `.github/workflows/deploy.yml`
+(lint + unit tests + build, then publish `dist/`). One-time setup: repository
+**Settings → Pages → Source: GitHub Actions**.
+
 CI (`.github/workflows/ci.yml`) runs lint, unit tests with coverage, build and E2E on
 every pull request; the `CI Passed` check aggregates them for branch protection.
 
