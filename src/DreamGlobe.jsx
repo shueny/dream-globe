@@ -108,6 +108,7 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
       applyHash(geo);
     }
     // applyHash only runs once, on first load — no need to track it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [geo]);
 
   const searchIndex = useMemo(() => (geo ? buildSearchIndex(geo) : null), [geo]);
