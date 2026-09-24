@@ -152,7 +152,7 @@ function CountryBody({ geo, country, dreams, onCountry, onState, onCity, onDream
           label="Capital"
           value={
             country.capital ? (
-              <button className="link" onClick={() => onCity(country.capital)}>
+              <button className="link" title={country.capital.name} onClick={() => onCity(country.capital)}>
                 {country.capital.name}
               </button>
             ) : (
@@ -268,7 +268,7 @@ function StateBody({ geo, state, place, dreams, onState, onCity, onDream, onCoun
           label={capital?.cap === 2 ? "National capital" : "Capital"}
           value={
             capital ? (
-              <button className="link" onClick={() => onCity(capital)}>
+              <button className="link" title={capital.name} onClick={() => onCity(capital)}>
                 {capital.name}
               </button>
             ) : (

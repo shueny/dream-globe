@@ -4,6 +4,18 @@ An interactive 3D night-Earth globe (React + Three.js). People pin their dreams 
 places; glowing markers, animated arcs, and a fully explorable map of **every country and
 every state / province on Earth**.
 
+**Live demo:** https://shueny.github.io/dream-globe/
+
+![Dream Globe — night Earth with dream markers, arcs and country labels](docs/screenshots/globe.jpg)
+
+| Country: Japan and its 47 prefectures | State: California |
+| --- | --- |
+| ![Japan selected, prefecture borders and the country panel](docs/screenshots/country.jpg) | ![California selected, state panel with neighbours and cities](docs/screenshots/state.jpg) |
+
+| Search: dreams, cities, states | Mobile: bottom-sheet panel |
+| --- | --- |
+| ![Search results for "kaoh"](docs/screenshots/search.jpg) | <img src="docs/screenshots/mobile.jpg" alt="Taiwan on a phone, with its county borders and the panel as a bottom sheet" width="300"> |
+
 ## Features
 
 - **Every country (258) and state / province (4,596)** from Natural Earth 1:10m, drawn as
