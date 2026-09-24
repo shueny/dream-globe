@@ -36,6 +36,10 @@ every state / province on Earth**.
   codes) and cities — offline — plus Open-Meteo geocoding for anywhere else (shows local
   time and elevation). Arrow keys + Enter; press `/` to focus.
 - **Pin your dream** anywhere; the modal tells you which state and country you're in.
+- **Connect dreams** — open any dream's card, press **⤳ Connect to another dream**, then
+  click another dream's marker on the globe (or search for it). A new arc draws itself
+  between them, and both cards list their connections. Duplicates and self-links are
+  refused; `Esc` cancels.
 - **Guided tour** (`▶ tour`) for demos, **deep links** (`#/JPN`, `#/USA-3521`), `Esc` to
   go back up a level, and a mobile layout with bottom sheets.
 
@@ -88,6 +92,8 @@ scripts/build-geo.mjs   Natural Earth → public/geo
 
 ```js
 DreamGlobe.addMarker(lat, lng, data)   // data: {name, age, city, country, text, tier, ago}
+DreamGlobe.addArc(a, b)                // a, b: dreams from addMarker, or indices
+                                       // → {ok:true} | {ok:false, reason:"missing"|"same"|"duplicate"}
 DreamGlobe.flyTo(lat, lng)
 DreamGlobe.onMarkerClick(cb)           // cb(dream)
 ```

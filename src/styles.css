@@ -810,6 +810,10 @@ button {
   z-index: 25;
   animation: floaty 7s ease-in-out infinite;
 }
+/* Hold still while the pointer is on it, so its buttons are easy to hit. */
+.card:hover {
+  animation-play-state: paused;
+}
 .card-x {
   position: absolute;
   right: 12px;
@@ -909,6 +913,42 @@ button {
 .card-region:hover {
   border-color: rgba(111, 216, 255, 0.5);
   color: var(--text);
+}
+
+.card-links {
+  margin-top: 14px;
+}
+.card-links-head {
+  font: 600 10px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.card-connect {
+  margin-top: 14px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(111, 216, 255, 0.45);
+  background: rgba(111, 216, 255, 0.12);
+  color: #bfeaff;
+  font: 600 12px var(--ui);
+}
+.card-connect:hover {
+  background: rgba(111, 216, 255, 0.2);
+  color: var(--text);
+}
+.card-connect span {
+  font-size: 14px;
+  line-height: 1;
+}
+.card-connect + .card-region {
+  margin-top: 8px;
 }
 
 /* ── Bottom controls ────────────────────────────────────────────────────── */
@@ -1051,6 +1091,39 @@ button {
 }
 .banner-cancel:hover {
   color: var(--text);
+}
+
+.banner-connect .live-dot {
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan);
+}
+.banner-text b {
+  color: var(--cyan);
+  font-weight: 600;
+}
+.banner-hint {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  top: 74px;
+  transform: translateX(-50%);
+  padding: 9px 16px;
+  border-radius: 999px;
+  z-index: 45;
+  font: 500 12.5px var(--ui);
+  color: var(--text);
+  background: var(--glass-strong);
+  border-color: rgba(111, 224, 160, 0.45);
+  animation: fadein 0.18s ease;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.toast-warn {
+  border-color: rgba(255, 190, 66, 0.5);
 }
 
 /* ── Tooltip ────────────────────────────────────────────────────────────── */
@@ -1251,6 +1324,15 @@ textarea.input {
   .banner-text {
     font-size: 12px;
     white-space: normal;
+  }
+  .banner-hint {
+    display: none;
+  }
+  .toast {
+    top: 64px;
+    max-width: calc(100vw - 32px);
+    white-space: normal;
+    text-align: center;
   }
   .stats {
     grid-template-columns: repeat(3, 1fr);

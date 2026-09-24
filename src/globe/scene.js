@@ -42,6 +42,8 @@ import { createLabels } from "./labels.js";
  *   onPointer?: (ll: {lat:number, lng:number} | null) => void,
  *   onReady?: () => void,
  *   onZoom?: (z: number) => void,
+ *   onConnectPick?: (dream: object) => void,
+ *   onLinks?: () => void,   // a runtime connection was added
  * }} [opts]
  */
 export function initScene(mount, opts = {}) {
@@ -57,6 +59,8 @@ export function initScene(mount, opts = {}) {
     onPointer = () => {},
     onReady = () => {},
     onZoom = () => {},
+    onConnectPick = () => {},
+    onLinks = () => {},
   } = opts;
 
   const R = 1;
@@ -267,14 +271,30 @@ export function initScene(mount, opts = {}) {
     depthWrite: false,
   });
 
-  const addArc = (a, b) => {
+  /**
+   * Connect two dreams with an arc. Each dream keeps `_links` (the dreams it's
+   * connected to) so the UI can list connections. `grow` animates the tube
+   * drawing itself from a to b — used for arcs people add at runtime.
+   * Returns false for a self-link or a pair that's already connected.
+   */
+  const addArc = (a, b, { grow = false } = {}) => {
+    if (!a || !b || a === b) return false;
+    a._links ||= [];
+    b._links ||= [];
+    if (a._links.includes(b)) return false;
+    a._links.push(b);
+    b._links.push(a);
     const va = ll2v(a.lat, a.lng, 1.01);
     const vb = ll2v(b.lat, b.lng, 1.01);
     const mid = va.clone().add(vb).multiplyScalar(0.5);
     const lift = 1 + va.distanceTo(vb) * 0.35;
     mid.normalize().multiplyScalar(lift);
     const curve = new THREE.QuadraticBezierCurve3(va, mid, vb);
-    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 64, 0.004, 6, false), arcMat);
+    const tubeGeo = new THREE.TubeGeometry(curve, 64, 0.004, 6, false);
+    // Tube indices run along the curve, so a growing draw range "draws" the arc.
+    const indexCount = tubeGeo.index.count;
+    if (grow) tubeGeo.setDrawRange(0, 0);
+    const tube = new THREE.Mesh(tubeGeo, arcMat);
     arcGroup.add(tube);
     const trav = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -286,8 +306,18 @@ export function initScene(mount, opts = {}) {
       }),
     );
     trav.scale.set(0.05, 0.05, 0.05);
+    trav.visible = !grow;
     arcGroup.add(trav);
-    arcs.push({ curve, trav, t: Math.random(), speed: 0.12 + Math.random() * 0.1 });
+    arcs.push({
+      curve,
+      trav,
+      tubeGeo,
+      indexCount,
+      grow: grow ? 0 : 1,
+      t: grow ? 0 : Math.random(),
+      speed: 0.12 + Math.random() * 0.1,
+    });
+    return true;
   };
   arcPairs.forEach(([a, b]) => {
     if (dreams[a] && dreams[b]) addArc(dreams[a], dreams[b]);
@@ -528,7 +558,8 @@ export function initScene(mount, opts = {}) {
     return v2ll(globe.worldToLocal(hitPt.clone()));
   };
 
-  const cursor = () => (placing ? "crosshair" : hovered || hoverRegion ? "pointer" : "grab");
+  const cursor = () =>
+    placing ? "crosshair" : hovered ? "pointer" : connecting ? "crosshair" : hoverRegion ? "pointer" : "grab";
 
   /** Resolve what's under the pointer; returns true if anything is. */
   const pickAt = (e) => {
@@ -539,10 +570,16 @@ export function initScene(mount, opts = {}) {
       hovered = hits[0].object;
       setHoverRegion(null);
       const dr = hovered.userData.dream;
-      onHover({ kind: "dream", dream: dr, x: e.clientX, y: e.clientY });
+      onHover({ kind: "dream", dream: dr, x: e.clientX, y: e.clientY, connectFrom: connecting });
       return true;
     }
     hovered = null;
+    if (connecting) {
+      // Only dreams are clickable while connecting — no region hover.
+      setHoverRegion(null);
+      onHover(null);
+      return false;
+    }
     const ll = surfaceHit();
     onPointer(ll);
     if (!ll) {
@@ -614,6 +651,12 @@ export function initScene(mount, opts = {}) {
       return;
     }
 
+    if (connecting) {
+      // Picking a partner: only dream markers count; the globe itself is inert.
+      if (hovered) onConnectPick(hovered.userData.dream);
+      return;
+    }
+
     if (hovered) {
       const dr = hovered.userData.dream;
       onSelect(dr); // React opens the card
@@ -651,6 +694,11 @@ export function initScene(mount, opts = {}) {
   }
 
   function flyToDir(toDir, dist, dur) {
+    // Whatever was under the pointer is about to move away: drop any queued
+    // hover pick and hide the tooltip instead of leaving it stale.
+    moveQueued = null;
+    hovered = null;
+    onHover(null);
     controls.autoRotate = false;
     clearTimeout(idleTimer);
     const fromDir = camera.position.clone().normalize();
@@ -693,6 +741,40 @@ export function initScene(mount, opts = {}) {
     return dr;
   };
 
+  /** Connecting mode: the next marker click picks a partner for `from`. */
+  let connecting = null;
+  const setConnecting = (from) => {
+    if (connecting) {
+      const m = markers.find((mk) => mk.userData.dream === connecting);
+      if (m) m.userData.base = 0.12;
+    }
+    connecting = from || null;
+    if (connecting) {
+      // Enlarge the source marker so it's clear what you're connecting from.
+      const m = markers.find((mk) => mk.userData.dream === connecting);
+      if (m) m.userData.base = 0.2;
+      setHoverRegion(null);
+    }
+    dom.style.cursor = cursor();
+  };
+
+  /** Resolve a dream from an object or an index into the dream list. */
+  const resolveDream = (d) => (typeof d === "number" ? dreams[d] : dreams.includes(d) ? d : null);
+
+  /**
+   * Public: connect two dreams (objects returned by addMarker, or indices).
+   * Returns {ok:true} or {ok:false, reason:"missing"|"same"|"duplicate"}.
+   */
+  const connect = (a, b) => {
+    const da = resolveDream(a);
+    const db = resolveDream(b);
+    if (!da || !db) return { ok: false, reason: "missing" };
+    if (da === db) return { ok: false, reason: "same" };
+    if (!addArc(da, db, { grow: true })) return { ok: false, reason: "duplicate" };
+    onLinks();
+    return { ok: true };
+  };
+
   const setPlacing = (v) => {
     placing = v;
     if (v) setHoverRegion(null);
@@ -702,6 +784,7 @@ export function initScene(mount, opts = {}) {
   // ── Public API — also exposed via useImperativeHandle in React ─────────────
   const api = {
     addMarker,
+    addArc: connect,
     flyTo,
     onMarkerClick: (cb) => {
       onMarkerClick = cb;
@@ -812,6 +895,17 @@ export function initScene(mount, opts = {}) {
     arcGroup.visible = arcFade > 0.01;
     arcMat.opacity = 0.4 * arcFade;
     for (const a of arcs) {
+      if (a.grow < 1) {
+        // Draw-in over ~0.9s, the traveller riding the leading edge.
+        a.grow = Math.min(1, a.grow + dt / 0.9);
+        const e = 1 - Math.pow(1 - a.grow, 3);
+        a.tubeGeo.setDrawRange(0, Math.floor((a.indexCount * e) / 3) * 3);
+        a.trav.visible = true;
+        a.trav.position.copy(a.curve.getPoint(e));
+        a.trav.material.opacity = arcFade;
+        if (a.grow >= 1) a.t = 1;
+        continue;
+      }
       a.t = (a.t + a.speed * dt) % 1;
       a.trav.position.copy(a.curve.getPoint(a.t));
       a.trav.material.opacity = arcFade;
@@ -900,6 +994,8 @@ export function initScene(mount, opts = {}) {
     globe,
     flyTo,
     addMarker,
+    connect,
+    setConnecting,
     zoomBy,
     home,
     ping,

@@ -151,3 +151,121 @@ test.describe("mobile", () => {
     await expect(page.locator(".bottom-left")).toBeHidden();
   });
 });
+
+test.describe("connecting dreams", () => {
+  // The dream card bobs continuously (spec "floaty"), so it is never "stable"
+  // for Playwright's actionability check — card buttons are clicked with force.
+  async function openDream(page, name) {
+    await page.locator(".search-box input").fill(name);
+    await page.locator(".search-row", { hasText: `✦ ${name}` }).first().click();
+  }
+
+  test("sample dreams list their existing connections", async ({ page }) => {
+    await ready(page);
+    await openDream(page, "Mei");
+    await expect(page.locator(".card-links-head")).toHaveText("Connected with 5");
+    await page.locator(".card-links .chip", { hasText: "Yuki" }).click({ force: true });
+    await expect(page.locator(".card-who")).toHaveText("Yuki, 19");
+  });
+
+  test("connect via search, then both cards list each other", async ({ page }) => {
+    await ready(page);
+    await openDream(page, "Kai");
+    await page.locator(".card-connect").click({ force: true });
+    await expect(page.locator(".banner-connect")).toContainText("Kai");
+    await expect(page.locator(".card")).toHaveCount(0);
+    await expect(page.locator(".bottom-left")).toHaveCount(0);
+    await openDream(page, "Aroha");
+    await expect(page.locator(".toast")).toHaveText("Connected Kai ↔ Aroha");
+    await expect(page.locator(".banner-connect")).toHaveCount(0);
+    await expect(page.locator(".card-who")).toHaveText("Aroha, 28");
+    await expect(page.locator(".card-links .chip", { hasText: "Kai" })).toBeVisible();
+    await openDream(page, "Kai");
+    await expect(page.locator(".card-links .chip", { hasText: "Aroha" })).toBeVisible();
+  });
+
+  test("duplicates and self-links are refused without leaving connect mode", async ({ page }) => {
+    await ready(page);
+    await openDream(page, "Mei");
+    await page.locator(".card-connect").click({ force: true });
+    await openDream(page, "Yuki"); // already connected in the sample data
+    await expect(page.locator(".toast")).toHaveText("Mei and Yuki are already connected");
+    await openDream(page, "Mei");
+    await expect(page.locator(".toast")).toHaveText("Pick a different dream to connect with");
+    await expect(page.locator(".banner-connect")).toBeVisible();
+    await page.locator("body").click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".banner-connect")).toHaveCount(0);
+    await expect(page.locator(".bottom-left")).toBeVisible();
+  });
+
+  test("clicking a marker on the globe completes the connection", async ({ page }) => {
+    await ready(page);
+    await openDream(page, "Kai");
+    await page.locator(".card-connect").click({ force: true });
+    // Centre Aoi's marker (Sapporo) on screen, then click it.
+    await page.evaluate(() => window.DreamGlobe.flyTo(43.062, 141.354));
+    // The flight's length depends on frame rate (slow under software WebGL), so
+    // keep nudging the pointer until the hover resolves on Aoi's marker.
+    let x = 720;
+    await expect
+      .poll(
+        async () => {
+          x = x === 720 ? 721 : 720;
+          await page.mouse.move(x, 450);
+          await page.waitForTimeout(400);
+          return (await page.locator(".tip").allTextContents()).join(" ");
+        },
+        { timeout: 30_000 },
+      )
+      .toContain("Connect with Aoi");
+    await page.mouse.click(x, 450);
+    await expect(page.locator(".toast")).toHaveText("Connected Kai ↔ Aoi");
+    await expect(page.locator(".card-who")).toHaveText("Aoi, 26");
+  });
+
+  test("clicking the globe itself does nothing while connecting", async ({ page }) => {
+    await ready(page);
+    await openDream(page, "Kai");
+    await page.locator(".card-connect").click({ force: true });
+    await page.evaluate(() => window.DreamGlobe.flyTo(0, -30)); // open Atlantic
+    await page.waitForTimeout(2500);
+    await page.mouse.click(720, 450);
+    await expect(page.locator(".banner-connect")).toBeVisible();
+    await expect(page.locator(".panel")).toHaveCount(0);
+    await expect(page.locator(".toast")).toHaveCount(0);
+  });
+
+  test("pinning cancels connect mode and a new pin can be connected", async ({ page }) => {
+    await ready(page);
+    await openDream(page, "Kai");
+    await page.locator(".card-connect").click({ force: true });
+    await page.keyboard.press("Escape");
+    await page.locator(".cta").click();
+    await page.mouse.click(930, 380);
+    await page.locator(".modal input").fill("Nova");
+    await page.locator(".btn-grad").click();
+    await expect(page.locator(".card-who")).toHaveText("Nova");
+    await page.locator(".card-connect").click({ force: true });
+    await openDream(page, "Salma");
+    await expect(page.locator(".toast")).toHaveText("Connected Nova ↔ Salma");
+  });
+
+  test("public API: addArc validates input and updates the card", async ({ page }) => {
+    await ready(page);
+    const r = await page.evaluate(() => {
+      const g = window.DreamGlobe;
+      const nova = g.addMarker(10, 10, { name: "Nova", city: "X", country: "Y", text: "t" });
+      return [g.addArc(nova, 0), g.addArc(0, nova), g.addArc(0, 0), g.addArc(0, 9999), g.addArc({ lat: 1 }, 0)];
+    });
+    expect(r).toEqual([
+      { ok: true },
+      { ok: false, reason: "duplicate" },
+      { ok: false, reason: "same" },
+      { ok: false, reason: "missing" },
+      { ok: false, reason: "missing" },
+    ]);
+    await openDream(page, "Aïsha");
+    await expect(page.locator(".card-links .chip", { hasText: "Nova" })).toBeVisible();
+  });
+});
