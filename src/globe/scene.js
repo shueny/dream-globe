@@ -605,6 +605,9 @@ export function initScene(mount, opts = {}) {
     if (e.pointerType === "touch") onHover(null);
 
     if (placing) {
+      // Drop any hover pick still queued for the next frame, or it would
+      // re-show a tooltip under the modal React is about to open.
+      moveQueued = null;
       setMouse(e);
       const ll = surfaceHit();
       if (ll) onPlace({ ...ll, ...(geo ? geo.locate(ll.lat, ll.lng) : {}) });
