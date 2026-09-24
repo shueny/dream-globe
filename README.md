@@ -34,7 +34,12 @@ pnpm install
 pnpm dev        # http://localhost:5173
 pnpm build      # static site in dist/ (relative base — deploy to any sub-path)
 pnpm lint
+pnpm test:unit  # Vitest (geo math, search, 3D layer builders) — add --coverage
+pnpm test:e2e   # Playwright against the production build
 ```
+
+CI (`.github/workflows/ci.yml`) runs lint, unit tests with coverage, build and E2E on
+every pull request; the `CI Passed` check aggregates them for branch protection.
 
 ## Geo data
 
