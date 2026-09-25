@@ -270,6 +270,18 @@ export function initScene(mount, opts = {}) {
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
+  // Arcs touching the focused dream (open card / connect source): brighter, and
+  // exempt from the zoom fade — otherwise a connection you just made between
+  // two nearby dreams would be invisible at the zoom its framing lands on.
+  const arcHotMat = new THREE.MeshBasicMaterial({
+    color: 0xc4f1ff,
+    transparent: true,
+    opacity: 0.85,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  let focusDream = null;
+  let hotCount = 0;
 
   /**
    * Connect two dreams with an arc. Each dream keeps `_links` (the dreams it's
@@ -294,7 +306,8 @@ export function initScene(mount, opts = {}) {
     // Tube indices run along the curve, so a growing draw range "draws" the arc.
     const indexCount = tubeGeo.index.count;
     if (grow) tubeGeo.setDrawRange(0, 0);
-    const tube = new THREE.Mesh(tubeGeo, arcMat);
+    const hot = !!focusDream && (a === focusDream || b === focusDream);
+    const tube = new THREE.Mesh(tubeGeo, hot ? arcHotMat : arcMat);
     arcGroup.add(tube);
     const trav = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -308,7 +321,12 @@ export function initScene(mount, opts = {}) {
     trav.scale.set(0.05, 0.05, 0.05);
     trav.visible = !grow;
     arcGroup.add(trav);
+    if (hot) hotCount += 1;
     arcs.push({
+      a,
+      b,
+      tube,
+      hot,
       curve,
       trav,
       tubeGeo,
@@ -322,6 +340,17 @@ export function initScene(mount, opts = {}) {
   arcPairs.forEach(([a, b]) => {
     if (dreams[a] && dreams[b]) addArc(dreams[a], dreams[b]);
   });
+
+  /** Highlight the arcs of one dream (or none). */
+  const setFocusDream = (d) => {
+    focusDream = d || null;
+    hotCount = 0;
+    for (const arc of arcs) {
+      arc.hot = !!focusDream && (arc.a === focusDream || arc.b === focusDream);
+      arc.tube.material = arc.hot ? arcHotMat : arcMat;
+      if (arc.hot) hotCount += 1;
+    }
+  };
 
   // ── Geography: borders, highlights, labels ────────────────────────────────
   const geoGroup = new THREE.Group();
@@ -891,24 +920,29 @@ export function initScene(mount, opts = {}) {
     }
     // Arcs fly high above the surface, so they'd slice across the view up
     // close — fade them out as you zoom in to country level.
+    // Highlighted (focus) arcs stay visible at any zoom.
     const arcFade = 1 - smooth(3.7, 4.6, z);
-    arcGroup.visible = arcFade > 0.01;
+    arcGroup.visible = arcFade > 0.01 || hotCount > 0;
     arcMat.opacity = 0.4 * arcFade;
     for (const a of arcs) {
+      const fade = a.hot ? 1 : arcFade;
+      a.trav.visible = fade > 0.01 && a.grow > 0;
       if (a.grow < 1) {
-        // Draw-in over ~0.9s, the traveller riding the leading edge.
-        a.grow = Math.min(1, a.grow + dt / 0.9);
+        // Hold the draw-in until the camera has arrived, so it's actually seen.
+        if (fly) continue;
+        // Draw-in over ~1.2s, the traveller riding the leading edge.
+        a.grow = Math.min(1, a.grow + dt / 1.2);
         const e = 1 - Math.pow(1 - a.grow, 3);
         a.tubeGeo.setDrawRange(0, Math.floor((a.indexCount * e) / 3) * 3);
         a.trav.visible = true;
         a.trav.position.copy(a.curve.getPoint(e));
-        a.trav.material.opacity = arcFade;
+        a.trav.material.opacity = fade;
         if (a.grow >= 1) a.t = 1;
         continue;
       }
       a.t = (a.t + a.speed * dt) % 1;
       a.trav.position.copy(a.curve.getPoint(a.t));
-      a.trav.material.opacity = arcFade;
+      a.trav.material.opacity = fade;
     }
 
     // Ease the projection offset (keeps the focus clear of side panels).
@@ -996,6 +1030,7 @@ export function initScene(mount, opts = {}) {
     addMarker,
     connect,
     setConnecting,
+    setFocusDream,
     zoomBy,
     home,
     ping,
