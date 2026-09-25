@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { initScene } from "./globe/scene.js";
 import { dreams as sampleDreams, arcPairs } from "./data/dreams.js";
-import { loadGeo, regionView, flagEmoji, fmtLatLng } from "./geo/data.js";
+import { loadGeo, regionView, flagEmoji, fmtLatLng, angularDist } from "./geo/data.js";
 import { buildSearchIndex } from "./ui/searchIndex.js";
 import Search from "./ui/Search.jsx";
 import RegionPanel from "./ui/RegionPanel.jsx";
@@ -55,6 +55,9 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
   const [form, setForm] = useState({ name: "", text: "" });
   const [zoom, setZoom] = useState(3);
   const [touring, setTouring] = useState(false);
+  const [connectFrom, setConnectFrom] = useState(null); // dream picking a partner
+  const [toast, setToast] = useState(null);
+  const [, setLinksVersion] = useState(0); // re-render after links change
   const readoutRef = useRef(null);
 
   // Latest handlers for the scene's (mount-once) callbacks.
@@ -67,6 +70,8 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
       arcPairs,
       onHover: (t) => handlers.current.hover(t),
       onSelect: (d) => handlers.current.dream(d),
+      onConnectPick: (d) => handlers.current.connectPick(d),
+      onLinks: () => setLinksVersion((v) => v + 1),
       onCount: setAdded,
       onPlace: (hit) => handlers.current.place(hit),
       onRegionClick: (hit) => handlers.current.region(hit),
@@ -214,6 +219,7 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
     // No hover tooltips while the pin modal is open.
     hover: (t) => setTip(pending ? null : t),
     dream: (d) => setCard(d),
+    connectPick: (d) => finishConnect(d),
     background: () => {
       setCard(null);
     },
@@ -259,6 +265,7 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
       if (e.key !== "Escape") return;
       if (document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA") return;
       if (pending) setPending(null);
+      else if (connectFrom) cancelConnect();
       else if (placing) cancelPlacing();
       else if (card) setCard(null);
       else if (sel.country) goUp();
@@ -272,14 +279,60 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
     ref,
     () => ({
       addMarker: (lat, lng, data) => ctxRef.current?.addMarker(lat, lng, data),
+      addArc: (a, b) => ctxRef.current?.connect(a, b),
       flyTo: (lat, lng) => ctxRef.current?.flyTo(lat, lng),
       onMarkerClick: (cb) => window.DreamGlobe?.onMarkerClick(cb),
     }),
     [],
   );
 
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  const toastTimer = useRef(null);
+  const showToast = (text, kind = "ok") => {
+    clearTimeout(toastTimer.current);
+    setToast({ text, kind, id: Date.now() });
+    toastTimer.current = setTimeout(() => setToast(null), 2600);
+  };
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+  // ── Connecting dreams ─────────────────────────────────────────────────────
+  const startConnect = (from) => {
+    if (placing) cancelPlacing();
+    setTouring(false);
+    setCard(null);
+    setConnectFrom(from);
+    ctxRef.current?.setConnecting(from);
+  };
+  const cancelConnect = () => {
+    setConnectFrom(null);
+    ctxRef.current?.setConnecting(null);
+    setTip(null);
+  };
+  const finishConnect = (to) => {
+    const from = connectFrom;
+    if (!from || !to) return;
+    if (to === from) {
+      showToast("Pick a different dream to connect with", "warn");
+      return;
+    }
+    const res = ctxRef.current?.connect(from, to);
+    if (res?.reason === "duplicate") {
+      showToast(`${from.name} and ${to.name} are already connected`, "warn");
+      return;
+    }
+    if (!res?.ok) return;
+    cancelConnect();
+    showToast(`Connected ${from.name} ↔ ${to.name}`);
+    setCard(to);
+    // Frame both ends: aim at the midpoint, pulled back by how far apart they are.
+    const mid = midpoint(from, to);
+    const dist = 1.5 + Math.min(1.4, angularDist(from.lat, from.lng, to.lat, to.lng) * 0.9);
+    ctxRef.current?.flyTo(mid.lat, mid.lng, dist);
+  };
+
   // ── Pinning ───────────────────────────────────────────────────────────────
   const startPlacing = (region) => {
+    if (connectFrom) cancelConnect();
     setCard(null);
     setPlacing(true);
     ctxRef.current?.setPlacing(true);
@@ -320,7 +373,9 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
   // ── Search picks ──────────────────────────────────────────────────────────
   const onPick = (r) => {
     setTouring(false);
-    if (r.type === "dream") {
+    if (r.type === "dream" && connectFrom) {
+      finishConnect(r.ref); // keyboard path: search for the partner
+    } else if (r.type === "dream") {
       setCard(r.ref);
       ctxRef.current?.flyTo(r.ref.lat, r.ref.lng);
     } else if (r.type === "country") selectCountry(r.ref);
@@ -419,6 +474,28 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
             </div>
             <span className="card-ago">{card.ago}</span>
           </div>
+          {card._links?.length > 0 && (
+            <div className="card-links">
+              <div className="card-links-head">Connected with {card._links.length}</div>
+              <div className="chips">
+                {card._links.map((d, i) => (
+                  <button
+                    key={i}
+                    className="chip"
+                    onClick={() => {
+                      setCard(d);
+                      ctxRef.current?.flyTo(d.lat, d.lng, Math.min(ctxRef.current.camera.position.length(), 2.1));
+                    }}
+                  >
+                    ↔ {d.name} · {d.city}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <button className="card-connect" onClick={() => startConnect(card)}>
+            <span>⤳</span> Connect to another dream
+          </button>
           {geo && card._cid && (
             <button
               className="card-region"
@@ -455,7 +532,7 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
       </div>
 
       {/* Bottom-left: CTA + hints */}
-      {!placing && (
+      {!placing && !connectFrom && (
         <div className="bottom-left">
           <button className="cta" onClick={() => startPlacing(null)}>
             <span className="cta-star">✦</span>Pin your dream
@@ -473,6 +550,25 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
           <button className="banner-cancel" onClick={cancelPlacing}>
             cancel
           </button>
+        </div>
+      )}
+
+      {connectFrom && (
+        <div className="glass banner banner-connect">
+          <div className="live-dot fast" />
+          <span className="banner-text">
+            Click another dream to connect with <b>{connectFrom.name}</b>
+            <span className="banner-hint"> — or search for one</span>
+          </span>
+          <button className="banner-cancel" onClick={cancelConnect}>
+            cancel
+          </button>
+        </div>
+      )}
+
+      {toast && (
+        <div key={toast.id} className={`glass toast toast-${toast.kind}`} role="status">
+          {toast.text}
         </div>
       )}
 
@@ -543,6 +639,21 @@ function Tooltip({ tip, dreams }) {
     left: Math.min(tip.x + 16, window.innerWidth - 240),
     top: Math.min(tip.y + 16, window.innerHeight - 80),
   };
+  if (tip.kind === "dream" && tip.connectFrom) {
+    const d = tip.dream;
+    const self = d === tip.connectFrom;
+    const already = tip.connectFrom._links?.includes(d);
+    return (
+      <div className="glass tip" style={style}>
+        <div className="tip-who">
+          {self ? "✦ This is where you started" : already ? "Already connected" : `⤳ Connect with ${d.name}`}
+        </div>
+        <div className="tip-place">
+          {d.city} · {d.country}
+        </div>
+      </div>
+    );
+  }
   if (tip.kind === "dream") {
     const d = tip.dream;
     return (
@@ -606,6 +717,18 @@ function nearestPlace(geo, country, lat, lng) {
     }
   }
   return bd < 1.5 ? best : null; // within ~1.2°
+}
+
+/** Great-circle midpoint of two lat/lng points. */
+function midpoint(a, b) {
+  const r = Math.PI / 180;
+  const v = (p) => [Math.cos(p.lat * r) * Math.cos(p.lng * r), Math.cos(p.lat * r) * Math.sin(p.lng * r), Math.sin(p.lat * r)];
+  const [x1, y1, z1] = v(a);
+  const [x2, y2, z2] = v(b);
+  const x = x1 + x2;
+  const y = y1 + y2;
+  const z = z1 + z2;
+  return { lat: Math.atan2(z, Math.hypot(x, y)) / r, lng: Math.atan2(y, x) / r };
 }
 
 function zoomLabel(z) {
