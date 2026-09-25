@@ -176,9 +176,12 @@ test.describe("connecting dreams", () => {
     await expect(page.locator(".card")).toHaveCount(0);
     await expect(page.locator(".bottom-left")).toHaveCount(0);
     await openDream(page, "Aroha");
-    await expect(page.locator(".toast")).toHaveText("Connected Kai ↔ Aroha");
+    await expect(page.locator(".toast")).toContainText("Connected Kai ↔ Aroha");
     await expect(page.locator(".banner-connect")).toHaveCount(0);
     await expect(page.locator(".card-who")).toHaveText("Aroha, 28");
+    // Completion is unmistakable: a ✓ toast, and the new link flagged in the card.
+    await expect(page.locator(".toast .toast-icon")).toHaveText("✓");
+    await expect(page.locator(".card-links .chip-new")).toContainText("Kai");
     await expect(page.locator(".card-links .chip", { hasText: "Kai" })).toBeVisible();
     await openDream(page, "Kai");
     await expect(page.locator(".card-links .chip", { hasText: "Aroha" })).toBeVisible();
@@ -189,9 +192,9 @@ test.describe("connecting dreams", () => {
     await openDream(page, "Mei");
     await page.locator(".card-connect").click({ force: true });
     await openDream(page, "Yuki"); // already connected in the sample data
-    await expect(page.locator(".toast")).toHaveText("Mei and Yuki are already connected");
+    await expect(page.locator(".toast")).toContainText("Mei and Yuki are already connected");
     await openDream(page, "Mei");
-    await expect(page.locator(".toast")).toHaveText("Pick a different dream to connect with");
+    await expect(page.locator(".toast")).toContainText("Pick a different dream to connect with");
     await expect(page.locator(".banner-connect")).toBeVisible();
     await page.locator("body").click({ position: { x: 5, y: 5 } });
     await page.keyboard.press("Escape");
@@ -220,7 +223,7 @@ test.describe("connecting dreams", () => {
       )
       .toContain("Connect with Aoi");
     await page.mouse.click(x, 450);
-    await expect(page.locator(".toast")).toHaveText("Connected Kai ↔ Aoi");
+    await expect(page.locator(".toast")).toContainText("Connected Kai ↔ Aoi");
     await expect(page.locator(".card-who")).toHaveText("Aoi, 26");
   });
 
@@ -248,7 +251,7 @@ test.describe("connecting dreams", () => {
     await expect(page.locator(".card-who")).toHaveText("Nova");
     await page.locator(".card-connect").click({ force: true });
     await openDream(page, "Salma");
-    await expect(page.locator(".toast")).toHaveText("Connected Nova ↔ Salma");
+    await expect(page.locator(".toast")).toContainText("Connected Nova ↔ Salma");
   });
 
   test("public API: addArc validates input and updates the card", async ({ page }) => {

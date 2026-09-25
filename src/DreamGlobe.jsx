@@ -57,6 +57,7 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
   const [touring, setTouring] = useState(false);
   const [connectFrom, setConnectFrom] = useState(null); // dream picking a partner
   const [toast, setToast] = useState(null);
+  const [lastLink, setLastLink] = useState(null); // {a, b}: the connection just made
   const [, setLinksVersion] = useState(0); // re-render after links change
   const readoutRef = useRef(null);
 
@@ -291,8 +292,15 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
   const showToast = (text, kind = "ok") => {
     clearTimeout(toastTimer.current);
     setToast({ text, kind, id: Date.now() });
-    toastTimer.current = setTimeout(() => setToast(null), 2600);
+    toastTimer.current = setTimeout(() => setToast(null), kind === "ok" ? 4200 : 2600);
   };
+
+  // Light up the arcs of whichever dream is in focus: the open card, or the
+  // dream you're connecting from.
+  const focusDream = card || connectFrom;
+  useEffect(() => {
+    ctxRef.current?.setFocusDream(focusDream);
+  }, [focusDream]);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 
   // ── Connecting dreams ─────────────────────────────────────────────────────
@@ -323,10 +331,12 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
     if (!res?.ok) return;
     cancelConnect();
     showToast(`Connected ${from.name} ↔ ${to.name}`);
+    setLastLink({ a: from, b: to });
     setCard(to);
-    // Frame both ends: aim at the midpoint, pulled back by how far apart they are.
+    // Frame both ends: aim at the midpoint, pulled back by how far apart they
+    // are — never closer than a view where the whole arc reads clearly.
     const mid = midpoint(from, to);
-    const dist = 1.5 + Math.min(1.4, angularDist(from.lat, from.lng, to.lat, to.lng) * 0.9);
+    const dist = Math.max(2.2, Math.min(3, 1.7 + angularDist(from.lat, from.lng, to.lat, to.lng) * 0.9));
     ctxRef.current?.flyTo(mid.lat, mid.lng, dist);
   };
 
@@ -481,13 +491,14 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
                 {card._links.map((d, i) => (
                   <button
                     key={i}
-                    className="chip"
+                    className={`chip${isLastLink(lastLink, card, d) ? " chip-new" : ""}`}
                     onClick={() => {
                       setCard(d);
                       ctxRef.current?.flyTo(d.lat, d.lng, Math.min(ctxRef.current.camera.position.length(), 2.1));
                     }}
                   >
-                    ↔ {d.name} · {d.city}
+                    {isLastLink(lastLink, card, d) ? "✓ " : "↔ "}
+                    {d.name} · {d.city}
                   </button>
                 ))}
               </div>
@@ -568,6 +579,7 @@ const DreamGlobe = forwardRef(function DreamGlobe(_props, ref) {
 
       {toast && (
         <div key={toast.id} className={`glass toast toast-${toast.kind}`} role="status">
+          <span className="toast-icon">{toast.kind === "ok" ? "✓" : "!"}</span>
           {toast.text}
         </div>
       )}
@@ -717,6 +729,11 @@ function nearestPlace(geo, country, lat, lng) {
     }
   }
   return bd < 1.5 ? best : null; // within ~1.2°
+}
+
+/** Is `d` (in `card`'s list) the partner of the connection just made? */
+function isLastLink(link, card, d) {
+  return !!link && ((link.a === card && link.b === d) || (link.b === card && link.a === d));
 }
 
 /** Great-circle midpoint of two lat/lng points. */

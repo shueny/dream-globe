@@ -1107,11 +1107,15 @@ button {
 }
 
 .toast {
+  /* Same spot as the connect banner, so the eye lands on the result. */
   position: absolute;
   left: 50%;
-  top: 74px;
+  bottom: 30px;
   transform: translateX(-50%);
-  padding: 9px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 18px 11px 12px;
   border-radius: 999px;
   z-index: 45;
   font: 500 12.5px var(--ui);
@@ -1124,6 +1128,35 @@ button {
 }
 .toast-warn {
   border-color: rgba(255, 190, 66, 0.5);
+}
+.toast-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 11px var(--ui);
+  color: #04101f;
+  background: var(--green);
+  box-shadow: 0 0 10px rgba(111, 224, 160, 0.7);
+  flex: none;
+}
+.toast-warn .toast-icon {
+  background: var(--amber);
+  box-shadow: 0 0 10px rgba(255, 190, 66, 0.6);
+}
+/* The connection you just made, highlighted in the card's list. */
+.chip-new {
+  border-color: rgba(111, 224, 160, 0.6);
+  background: rgba(111, 224, 160, 0.14);
+  color: var(--text);
+  animation: chipglow 1.6s ease-in-out 3;
+}
+@keyframes chipglow {
+  50% {
+    box-shadow: 0 0 12px rgba(111, 224, 160, 0.55);
+  }
 }
 
 /* ── Tooltip ────────────────────────────────────────────────────────────── */
@@ -1329,7 +1362,9 @@ textarea.input {
     display: none;
   }
   .toast {
+    /* Bottom is taken by the card sheet on phones. */
     top: 64px;
+    bottom: auto;
     max-width: calc(100vw - 32px);
     white-space: normal;
     text-align: center;
