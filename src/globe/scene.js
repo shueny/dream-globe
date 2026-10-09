@@ -1005,6 +1005,11 @@ export function initScene(mount, opts = {}) {
     glowTex.dispose();
     for (const g of fillCache.values()) g.dispose();
     for (const g of outlineCache.values()) g.dispose();
+    // Materials that can be detached from the scene graph at teardown time
+    // (no country selected / no hot arcs), so the traverse below can miss them.
+    focusStateMat.dispose();
+    arcMat.dispose();
+    arcHotMat.dispose();
     scene.traverse((o) => {
       o.geometry?.dispose?.();
       const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
