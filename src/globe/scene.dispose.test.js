@@ -16,6 +16,8 @@ import { buildGeo } from "../geo/data.js";
  */
 
 const drawn = new Set();
+let textureRequests = [];
+let textureFails = () => false;
 const disposed = new WeakSet();
 
 function track(res) {
@@ -63,11 +65,13 @@ vi.mock("three", async (importOriginal) => {
     }
   }
 
-  // Textures "load" instantly so the earth maps are part of the test.
+  // Textures "load" on the next microtask so the earth maps are part of the
+  // test; `textureFails(url)` lets a test make a source error instead.
   class FakeTextureLoader extends THREE.TextureLoader {
-    load(_url, onLoad) {
+    load(url, onLoad, _onProgress, onError) {
+      textureRequests.push(url);
       const tex = new THREE.Texture();
-      queueMicrotask(() => onLoad(tex));
+      queueMicrotask(() => (textureFails(url) ? onError(new Error(`404 ${url}`)) : onLoad(tex)));
       return tex;
     }
   }
@@ -88,6 +92,8 @@ beforeAll(() => {
 let frames = [];
 beforeEach(() => {
   drawn.clear();
+  textureRequests = [];
+  textureFails = () => false;
   frames = [];
   let id = 0;
   vi.stubGlobal("requestAnimationFrame", (cb) => {
@@ -116,11 +122,11 @@ function step(n = 1) {
   }
 }
 
-function mountScene() {
+function mountScene(opts = {}) {
   const mount = document.createElement("div");
   document.body.appendChild(mount);
   const dreams = sampleDreams.map((d) => ({ ...d }));
-  const ctx = initScene(mount, { dreams, arcPairs });
+  const ctx = initScene(mount, { dreams, arcPairs, ...opts });
   return { mount, ctx, dreams };
 }
 
@@ -175,5 +181,56 @@ describe("initScene dispose()", () => {
     for (const [type, fn] of addSpy.mock.calls) {
       expect(removeSpy.mock.calls.some(([t, f]) => t === type && f === fn), type).toBe(true);
     }
+  });
+});
+
+describe("initScene earth textures", () => {
+  // Let every queued load/error microtask (and the retries they start) settle.
+  const settle = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  };
+
+  it("loads the self-hosted WebP textures first", async () => {
+    const onReady = vi.fn();
+    const { ctx } = mountScene({ onReady });
+    await settle();
+    expect(textureRequests.sort()).toEqual(["/textures/earth-blue-marble.webp", "/textures/earth-night.webp"]);
+    expect(ctx.globe.children[0].material.map).toBeTruthy();
+    expect(ctx.globe.children[0].material.emissiveMap).toBeTruthy();
+    expect(onReady).toHaveBeenCalledTimes(1);
+    ctx.dispose();
+  });
+
+  it("falls back to the CDN JPGs when the WebP fails (e.g. no WebP support)", async () => {
+    textureFails = (url) => url.endsWith(".webp");
+    const onReady = vi.fn();
+    const { ctx } = mountScene({ onReady });
+    await settle();
+    const day = textureRequests.filter((u) => u.includes("earth-blue-marble"));
+    expect(day).toEqual(["/textures/earth-blue-marble.webp", "https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg"]);
+    expect(ctx.globe.children[0].material.map).toBeTruthy();
+    expect(onReady).toHaveBeenCalledTimes(1);
+    ctx.dispose();
+  });
+
+  it("still reports ready when every source fails, with the plain material", async () => {
+    textureFails = () => true;
+    const onReady = vi.fn();
+    const { ctx } = mountScene({ onReady });
+    await settle();
+    expect(textureRequests).toHaveLength(6); // 2 textures × (local + 2 CDNs)
+    expect(ctx.globe.children[0].material.map).toBeNull();
+    expect(onReady).toHaveBeenCalledTimes(1);
+    ctx.dispose();
+  });
+
+  it("ignores textures that arrive after dispose()", async () => {
+    const onReady = vi.fn();
+    const { ctx } = mountScene({ onReady });
+    const earthMat = ctx.globe.children[0].material;
+    ctx.dispose(); // unmounted while both requests are in flight
+    await settle();
+    expect(earthMat.map).toBeNull();
+    expect(onReady).not.toHaveBeenCalled();
   });
 });
