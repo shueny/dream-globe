@@ -88,6 +88,10 @@ src/
 scripts/build-geo.mjs   Natural Earth → public/geo
 ```
 
+The scene is plain Three.js rather than react-three-fiber — see
+[docs/why-not-r3f.md](docs/why-not-r3f.md) for the trade-offs and measured bundle sizes.
+`src/globe/scene.dispose.test.js` guards the hand-written teardown against GPU leaks.
+
 ## Public API
 
 ```js

@@ -131,7 +131,8 @@ export function initScene(mount, opts = {}) {
   const earth = new THREE.Mesh(earthGeo, earthMat);
   globe.add(earth);
 
-  // Textures self-hosted from /public/textures, with CDN fallback.
+  // Textures self-hosted from /public/textures as WebP (q80, ~60% smaller than
+  // the JPGs), with the original JPGs on a CDN as fallback.
   const loader = new THREE.TextureLoader();
   loader.setCrossOrigin("anonymous");
   const cdnHosts = [
@@ -139,8 +140,8 @@ export function initScene(mount, opts = {}) {
     "https://cdn.jsdelivr.net/npm/three-globe/example/img/",
   ];
   const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-  const loadTex = (file, onLoad) => {
-    const sources = [`${import.meta.env.BASE_URL}textures/${file}`, ...cdnHosts.map((h) => h + file)];
+  const loadTex = (name, onLoad) => {
+    const sources = [`${import.meta.env.BASE_URL}textures/${name}.webp`, ...cdnHosts.map((h) => `${h}${name}.jpg`)];
     let i = 0;
     const tryNext = () => {
       if (i >= sources.length) return onLoad(null);
@@ -157,7 +158,7 @@ export function initScene(mount, opts = {}) {
     if (pendingTex === 0 && !stopped) onReady();
   };
   // Base map: blue-marble, dark-tinted so continents read over the ocean.
-  loadTex("earth-blue-marble.jpg", (tex) => {
+  loadTex("earth-blue-marble", (tex) => {
     if (tex && !stopped) {
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = aniso;
@@ -168,7 +169,7 @@ export function initScene(mount, opts = {}) {
     texDone();
   });
   // Glow layer: night-side city lights as an emissive map.
-  loadTex("earth-night.jpg", (tex) => {
+  loadTex("earth-night", (tex) => {
     if (tex && !stopped) {
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = aniso;
@@ -1005,6 +1006,11 @@ export function initScene(mount, opts = {}) {
     glowTex.dispose();
     for (const g of fillCache.values()) g.dispose();
     for (const g of outlineCache.values()) g.dispose();
+    // Materials that can be detached from the scene graph at teardown time
+    // (no country selected / no hot arcs), so the traverse below can miss them.
+    focusStateMat.dispose();
+    arcMat.dispose();
+    arcHotMat.dispose();
     scene.traverse((o) => {
       o.geometry?.dispose?.();
       const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
