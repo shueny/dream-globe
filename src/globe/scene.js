@@ -99,6 +99,18 @@ export function initScene(mount, opts = {}) {
     return aspect < 0.8 ? HOME_DIST / Math.max(0.55, aspect / 0.8) : HOME_DIST;
   }
 
+  // Idle frame cap: with no input, camera flight or arc draw-in under way,
+  // render at most ~30fps — the marker pulse and auto-rotate are slow enough
+  // that it doesn't show — to save GPU and battery. Any input (drag, wheel,
+  // pointer move) restores the full frame rate for ACTIVE_MS.
+  const IDLE_FRAME_MS = 1000 / 30;
+  const ACTIVE_MS = 1000;
+  let interacting = false;
+  let lastInput = -Infinity;
+  const markInput = () => {
+    lastInput = performance.now();
+  };
+
   // Idle auto-rotate: off while interacting, back on 4s after the last one —
   // unless a country/state is selected (rotating it out of view would be rude).
   let idleTimer = null;
@@ -110,11 +122,17 @@ export function initScene(mount, opts = {}) {
     }, 4000);
   };
   controls.addEventListener("start", () => {
+    interacting = true;
+    markInput();
     controls.autoRotate = false;
     clearTimeout(idleTimer);
     fly = null;
   });
-  controls.addEventListener("end", scheduleIdle);
+  controls.addEventListener("end", () => {
+    interacting = false;
+    markInput();
+    scheduleIdle();
+  });
 
   const globe = new THREE.Group();
   scene.add(globe);
@@ -705,6 +723,7 @@ export function initScene(mount, opts = {}) {
   };
 
   dom.addEventListener("pointermove", onPointerMove);
+  dom.addEventListener("pointermove", markInput);
   dom.addEventListener("pointerleave", onPointerLeave);
   dom.addEventListener("pointerdown", onPointerDown);
   dom.addEventListener("pointerup", onPointerUp);
@@ -875,11 +894,23 @@ export function initScene(mount, opts = {}) {
   let labelsDirty = true;
   const lastCam = new THREE.Vector3();
   let lastZoomReported = -1;
+  let lastFrame = -Infinity;
 
-  const animate = () => {
+  const isActive = (now) =>
+    interacting ||
+    !!fly ||
+    now - lastInput < ACTIVE_MS ||
+    shift.x !== shift.tx ||
+    shift.y !== shift.ty ||
+    arcs.some((a) => a.grow < 1);
+
+  const animate = (now = performance.now()) => {
     if (stopped) return;
     raf = requestAnimationFrame(animate);
-    timer.update();
+    // 2ms slack so a 60Hz display lands on every other frame, not every third.
+    if (!isActive(now) && now - lastFrame < IDLE_FRAME_MS - 2) return;
+    lastFrame = now;
+    timer.update(now);
     const rawDt = timer.getDelta();
     // Animations clamp dt so a background tab doesn't jump; camera flights use
     // wall-clock time (capped) so they finish on time even at low frame rates.
@@ -902,7 +933,8 @@ export function initScene(mount, opts = {}) {
         scheduleIdle();
       }
     } else {
-      controls.update();
+      // Pass the (clamped) dt so auto-rotate speed doesn't depend on the frame rate.
+      controls.update(dt);
     }
 
     const dist = camera.position.length();
@@ -997,6 +1029,7 @@ export function initScene(mount, opts = {}) {
     clearTimeout(idleTimer);
     window.removeEventListener("resize", onResize);
     dom.removeEventListener("pointermove", onPointerMove);
+    dom.removeEventListener("pointermove", markInput);
     dom.removeEventListener("pointerleave", onPointerLeave);
     dom.removeEventListener("pointerdown", onPointerDown);
     dom.removeEventListener("pointerup", onPointerUp);

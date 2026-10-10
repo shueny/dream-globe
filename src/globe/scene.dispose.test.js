@@ -88,9 +88,14 @@ beforeAll(() => {
   geo = buildGeo(read("world.topo.json"), read("places.json"));
 });
 
-// Manual animation frames: initScene runs one frame on its own, then we step.
+// Manual animation frames on a virtual clock: initScene runs one frame on its
+// own, then we step. performance.now() follows the same clock, so input
+// timestamps and frame timestamps agree like they do in a browser.
 let frames = [];
+let clock = 0;
 beforeEach(() => {
+  clock = 1000;
+  vi.spyOn(performance, "now").mockImplementation(() => clock);
   drawn.clear();
   textureRequests = [];
   textureFails = () => false;
@@ -114,11 +119,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function step(n = 1) {
+// Each step advances the clock by `ms` (default: slower than the idle frame
+// cap, so every step renders) and runs the frames that were due.
+function step(n = 1, ms = 40) {
   for (let i = 0; i < n; i++) {
+    clock += ms;
     const due = frames;
     frames = [];
-    for (const f of due) f.cb(performance.now());
+    for (const f of due) f.cb(clock);
   }
 }
 
@@ -232,5 +240,114 @@ describe("initScene earth textures", () => {
     await settle();
     expect(earthMat.map).toBeNull();
     expect(onReady).not.toHaveBeenCalled();
+  });
+});
+
+describe("initScene idle frame cap", () => {
+  const HZ60 = 1000 / 60;
+  const settle = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  };
+  // Mount, let textures land and the start-up input window (none) pass.
+  async function idleScene() {
+    const s = mountScene();
+    await settle();
+    step(1, 2000);
+    const render = vi.spyOn(s.ctx.renderer, "render");
+    return { ...s, render };
+  }
+  const azimuth = (ctx) => Math.atan2(ctx.camera.position.x, ctx.camera.position.z);
+
+  it("renders at most ~30fps when nothing is happening", async () => {
+    const { ctx, render } = await idleScene();
+    step(60, HZ60); // one second on a 60Hz display
+    expect(render.mock.calls.length).toBeGreaterThanOrEqual(29);
+    expect(render.mock.calls.length).toBeLessThanOrEqual(31);
+    render.mockClear();
+    step(120, 1000 / 120); // one second on a 120Hz display
+    expect(render.mock.calls.length).toBeGreaterThanOrEqual(28);
+    expect(render.mock.calls.length).toBeLessThanOrEqual(31);
+    ctx.dispose();
+  });
+
+  it("renders every frame while the pointer moves, then drops back after 1s", async () => {
+    const { ctx, render } = await idleScene();
+    for (let i = 0; i < 30; i++) {
+      ctx.renderer.domElement.dispatchEvent(new Event("pointermove"));
+      step(1, HZ60);
+    }
+    expect(render).toHaveBeenCalledTimes(30);
+    step(60, HZ60); // the first second after the last move is still full rate
+    render.mockClear();
+    step(60, HZ60);
+    expect(render.mock.calls.length).toBeLessThanOrEqual(31);
+    ctx.dispose();
+  });
+
+  it("renders every frame while dragging (controls start → end)", async () => {
+    const { ctx, render } = await idleScene();
+    ctx.controls.dispatchEvent({ type: "start" });
+    step(120, HZ60); // a 2s drag with no pointer events reaching the canvas
+    expect(render).toHaveBeenCalledTimes(120);
+    ctx.controls.dispatchEvent({ type: "end" });
+    step(60, HZ60);
+    render.mockClear();
+    step(60, HZ60);
+    expect(render.mock.calls.length).toBeLessThanOrEqual(31);
+    ctx.dispose();
+  });
+
+  it("renders every frame during a camera flight", async () => {
+    const { ctx, render } = await idleScene();
+    ctx.flyTo(35.68, 139.69);
+    step(30, HZ60); // mid-flight (a flight lasts ≥ 0.8s)
+    expect(render).toHaveBeenCalledTimes(30);
+    ctx.dispose();
+  });
+
+  it("renders every frame while a new connection draws itself in", async () => {
+    const { ctx, render } = await idleScene();
+    expect(ctx.connect(0, 5)).toEqual({ ok: true }); // a pair with no arc yet
+    step(30, HZ60); // the draw-in takes ~1.2s
+    expect(render).toHaveBeenCalledTimes(30);
+    ctx.dispose();
+  });
+
+  it("renders every frame while the view eases aside for a panel", async () => {
+    const { ctx, render } = await idleScene();
+    ctx.setViewShift(-180, 0);
+    step(20, HZ60);
+    expect(render).toHaveBeenCalledTimes(20);
+    ctx.dispose();
+  });
+
+  it("auto-rotates at the same steady speed whether capped or at full rate", async () => {
+    // OrbitControls damping eases auto-rotate in over a fixed number of frames,
+    // so warm up for 1s and compare the steady speed over the next 2s.
+    // Idle: capped to ~30fps.
+    const a = await idleScene();
+    step(60, HZ60);
+    const a0 = azimuth(a.ctx);
+    step(120, HZ60);
+    const idleTurn = azimuth(a.ctx) - a0;
+    a.ctx.dispose();
+
+    // Pointer moving every frame: full 60fps, auto-rotate still on.
+    const b = await idleScene();
+    for (let i = 0; i < 60; i++) {
+      b.ctx.renderer.domElement.dispatchEvent(new Event("pointermove"));
+      step(1, HZ60);
+    }
+    const b0 = azimuth(b.ctx);
+    for (let i = 0; i < 120; i++) {
+      b.ctx.renderer.domElement.dispatchEvent(new Event("pointermove"));
+      step(1, HZ60);
+    }
+    const activeTurn = azimuth(b.ctx) - b0;
+    b.ctx.dispose();
+
+    expect(Math.abs(idleTurn)).toBeGreaterThan(0);
+    expect(idleTurn / activeTurn).toBeGreaterThan(0.97);
+    expect(idleTurn / activeTurn).toBeLessThan(1.03);
   });
 });
